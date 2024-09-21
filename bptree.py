@@ -1,6 +1,7 @@
 import csv
 import struct
 import sys
+from math import ceil
 
 
 class Node:
@@ -41,8 +42,8 @@ class Node:
     def add_key(self, tree, key, value, is_split=False):
         # 노드가 가득 찼고 분할을 아직 하지 않은 경우
         if not is_split and (self.m >= self.b - 1):
-            # print("\n\n\nsplittttttt\n")
             return self.split(tree, key, value)
+
         # 키를 삽입할 위치 찾기
         insert_idx = 0
         while insert_idx < self.m and self.key[insert_idx] < key:
@@ -64,14 +65,13 @@ class Node:
             tree.update_node(self)  # 현재 노드가 변경됨
 
     def split(self, tree, key, value):
-        print("\n\n enter split\n\n")
 
         # split 하기 전에 임의로 배열 크기 증가시켜놓음 (고정 크기 +1) -> 노드 업데이트 할 때는 줄여져야함 (확인)
         self.key.append(-1)
         self.leftchild.append(-1)
 
         self.add_key(tree, key, value, is_split=True)
-        print("\n\n enter split erroror\n\n")
+
         mid_idx = (self.b)//2
         mid_key = self.key[mid_idx]
 
@@ -113,28 +113,22 @@ class Node:
             # 왼쪽 자식 노드와 오른쪽 자식 노드 (지금은 현재 노드) 가 변경됨 -> 업데이트
             tree.update_node(new_node)
             tree.update_node(self)
-            print("\n\n왼쪽 자식 노드\n", new_node)
-            print("\n\n 오른쪽 자식 노드\n", self)
+            # print("\n\n왼쪽 자식 노드\n", new_node)
+            # print("\n\n 오른쪽 자식 노드\n", self)
 
+            # range search
             # 분할 후 midkey 값과 midleftchild(새로만든 왼쪽 자식 노드) 값을 부모 노드로 올려줘야함
             parent_node = self.load_parent_node(tree, self)
-            print("\nparent node is\n", parent_node)
+            # print("\nparent node is\n", parent_node)
             # 부모노드가 있다면 (루트 노드가 아닌 경우)
             if parent_node:
+                # # original 노드를 right child 로 가리키던 leaf 가 있다면, new node 로 연결해줘야함
+                left_sibling = self.find_leftsibling(tree, self)
+                if left_sibling:
+                    print("left sibling\n", left_sibling)
+                    left_sibling.rightchild = new_node.position
+                    tree.update_node(left_sibling)
 
-                # original 노드를 right child 로 가리키던 leaf 가 있다면, new node 로 연결해줘야함
-                for idx, childnode_position in enumerate(parent_node.leftchild):
-                    # 만약 original node 가 부모노드의 자식 노드 중 첫번째가 아니었다면 가리키던 leaf 가 있었던 것
-                    if childnode_position == self.position and idx > 0:
-                        # 부모노드의 이전 키의 왼쪽 자식 노드에 연결되어 있는 키가 sibling
-                        sibling_position = parent_node.leftchild[idx-1]
-
-                        if sibling_position != -1:
-                            sibling_node = tree.load_node(sibling_position)
-                            sibling_node.rightchild = new_node.position
-                            tree.update_node(sibling_node)
-                        break
-                        # mid key 의 왼쪽 자식 노드는 새로 만든 left child node 임
                 parent_node.add_key(tree, mid_key, new_node.position)
                 tree.update_node(parent_node)  # parent 노드 변경됨 -> 업데이트
 
@@ -203,9 +197,117 @@ class Node:
                 new_root.rightchild = self.position  # 오른쪽 자식 노드를 현재 노드로 설정
                 tree.update_node(new_root)
 
+    def delete_key(self, tree, key):
+        # 노드에서 지울 키 값 찾고, key, value 지우기 (-1)
+        for idx, node_key in enumerate(self.key):
+            if node_key == key:
+                self.key[idx] = -1
+                self.leftchild[idx] = -1
+                self.m -= 1
+                break
+        # 노드에서 키 값 빼고 노드 정리
+        self.sort_node(idx)
+        tree.update_node(self)
+
+        # 노드 정렬
+
+    def sort_node(self, idx):
+        # 노드 당기기 (현재 지운 idx 뒤에 값이 남아있으면)
+        max_idx = self.b-2  # 최대 키 개수: b-1, idx 는 0부터 시작
+        if (idx) < (max_idx):
+            for i in range(idx, max_idx):
+                # if self.key[i] == -1:
+                #     break
+                self.key[i] = self.key[i+1]
+                self.leftchild[i] = self.leftchild[i+1]
+            self.key[max_idx] = -1
+            self.leftchild[max_idx] = -1
+
+    def find_min_key(self, tree, node):
+        while not node.is_leaf:
+            node = tree.load_node(node.leftchild[0])
+        # 리프의 가장 작은 값 리턴
+        return node.key[0]
+
+    def find_sibling(self, tree, parent_node):
+        cur_node = self
+        max_idx = self.b-2
+        find_flag = False
+        # print("cur node is\n",cur_node)
+        # print("parent_node is \n",parent_node)
+        for idx, leftchild in enumerate(parent_node.leftchild):
+            if cur_node.position == leftchild:
+                find_flag = True
+                break
+        if (find_flag):
+            # print("idx is",idx,"\n")
+            # 현재 노드가 부모의 가장 왼쪽 자식이었을 경우, l_s 없음
+            if idx == 0:
+                left_sibling = None
+            else:  # 아니라면 l_s는 부모노드의 한칸 전 leftchild
+                left_sibling = tree.load_node(parent_node.leftchild[idx-1])
+            # 현재 노드가 부모의 가장 끝쪽 키의 왼쪽 자식이었으면,
+            if idx == max_idx or idx == parent_node.m-1:  # 이 조건이 중복인가?
+                right_sibling = tree.load_node(parent_node.rightchild)
+            else:
+                right_sibling = tree.load_node(parent_node.leftchild[idx+1])
+        # 현재 노드가 부모의 가장 오른쪽 자식이었을 경우
+        else:
+            idx = parent_node.m-1  # 현재 들어있는 부모 키의 가장 오른쪽 (idx : 0)
+            left_sibling = tree.load_node(parent_node.leftchild[idx])
+            right_sibling = None
+        return left_sibling, right_sibling
+
+    # split 에서는 leftsibling 만 필요 => load 수 줄이기 위해 함수 나눠 짬
+    def find_leftsibling(self, tree, cur_node):
+        node = tree.load_root_node()
+        while not node.is_leaf:
+            node_position = node.leftchild[0]
+            print("\nnode posi is", node_position)
+            node = tree.load_node(node_position)
+        while node:
+            if node.rightchild == cur_node.position:
+                return node
+                break
+            elif node.rightchild != -1:
+                node = tree.load_node(node.rightchild)
+            else:
+                node = None
+
+    def borrow_left_sibling(self, tree, left_sibling, parent_node, key):
+        for idx, leftchild in enumerate(parent_node.leftchild):
+            if left_sibling.position == leftchild:
+                break
+        # left sibling 의 가장 오른쪽 키
+        rightmost = left_sibling.m-1
+        tmp_key = left_sibling.key[rightmost]
+        tmp_value = left_sibling.leftchild[rightmost]
+        left_sibling.delete_key(tree, tmp_key)
+        parent_node.key[idx] = tmp_key
+        tree.update_node(parent_node)
+        self.delete_key(tree, key)
+        self.add_key(tree, tmp_key, tmp_value)
+
+    def borrow_right_sibling(self, tree, right_sibling, parent_node, key):
+        find_flag = False
+        for idx, leftchild in enumerate(parent_node.leftchild):
+            if right_sibling.position == leftchild:
+                find_flag = True
+                idx -= 1
+                break
+
+        if not find_flag:
+            idx = parent_node.m-1
+        tmp_key = right_sibling.key[0]
+        tmp_value = right_sibling.leftchild[0]
+        right_sibling.delete_key(tree, tmp_key)
+        self.delete_key(tree, key)
+        self.add_key(tree, tmp_key, tmp_value)
+        parent_node.key[idx] = right_sibling.key[0]
+        tree.update_node(parent_node)
+
     def load_parent_node(self, tree, target_node):
         root_node = tree.load_root_node()
-        print("\nparent node - root_node\n", root_node)
 
         # 부모가 없음 -> 현재 노드가 루트 노드인 경우
         if root_node.position == target_node.position:
@@ -231,7 +333,6 @@ class Node:
                     break
             # for 문 돌았는데 없었다면 (현재 노드에 있는 키들보다 큰 키를 찾는 것) -> rightmost child 로 이동
             if not find_flag and cur_node.rightchild != -1:
-                print("\n\nherhehrehreh")
                 rightchild_position = cur_node.rightchild
                 if target_node.position == rightchild_position:
                     parent_node = cur_node
@@ -309,7 +410,7 @@ class BPTree:
             root_node_position = struct.unpack('i', file.read(4))[0]
 
             if root_node_position == -1:
-                print("no root node")
+
                 return None
 
             return self.load_node(root_node_position)
@@ -320,7 +421,6 @@ class BPTree:
             # header 작성 , header = b, root node position
             header = struct.pack('ii', self.b, -1)  # 최초 루트 노드 위치는 -1 로 임의 설정
             file.write(header)
-        #######################################################
 
     def search(self, key, node):
         if not node.is_leaf:
@@ -333,7 +433,8 @@ class BPTree:
                     if node_key == key:
                         # leaf node 의 leftchild == value
                         print(node.leftchild[idx])
-                        return node.leftchild[idx]
+                        # return node.leftchild[idx]
+                        return node  # 딜리트 위해 찾은 리프 노드 반환
                 print("search - not found")
                 return node  # 키 값이 존재하지 않음 -> insert 위해 leaf node 반환
             else:
@@ -359,15 +460,23 @@ class BPTree:
                     # print("search: rightchild node error")
                     return None
 
-                    # # or (rightmostnode)
-                    # elif node_key != -1:
-                    #     if idx != (len(node.key) - 1):
-                    #         continue
-                    #     else:
-                    #         rightchild_position = node.rightchild
-                    #         rightchild_node = self.load_node(
-                    #             rightchild_position)
-                    #         return self.search(key, rightchild_node)
+    def range_search(self, node):
+        with open(self.index_file, 'rb') as file:
+            print("node posi is", node.position)
+            while not node.is_leaf:
+                node_posi = node.leftchild[0]
+                print("\nnode posi is", node_posi)
+                node = tree.load_node(node_posi)
+
+            while node:
+                for idx, key in enumerate(node.key):
+                    if key != -1:
+                        print("key , value", key, node.leftchild[idx])
+                # 다음 리프 노드로 이동
+                if node.rightchild != -1:
+                    node = tree.load_node(node.rightchild)
+                else:
+                    node = None
 
     def insert(self, key, value):
         key = int(key)
@@ -383,7 +492,57 @@ class BPTree:
 
         insert_node.add_key(self, key, value)
 
-    #     # 디버깅용
+    # 진행 상황:
+    # 1. 최소 키 만족할 경우 (index 있을때 없을 때 )-> 인덱스 삭제해줌
+    # 2.  최소키 만족하지 않는 경우
+    # left sibling 여유 키 있을 때 빌려오기
+    
+    def delete(self, key):
+        key = int(key)
+        min_key_num = int(ceil(self.b/2)-1)
+        print("minkeynum", min_key_num)
+
+        root_node = self.load_root_node()
+        delete_node = self.search(key, root_node)  # search 에서 찾은 리프 노드 받기
+        max_idx = self.b-2  # 최대 자식 갯수 : b-1, idx 0부터~
+
+        #  # case 01 : 부모 노드의 첫번째 키의 왼쪽 leftchild 노드
+        #  # == 부모 노드의 첫번째 키보다 작으면
+        # if parent_node.key[0] > key:
+        #     delete_node.delete_key(self, key)
+        parent_node = delete_node.load_parent_node(self, delete_node)
+
+        if delete_node.m is not min_key_num:
+            delete_node.delete_key(self, key)
+
+        else:  # 현재 키가 최소 키 -> 삭제 후 재조정 필요 && 형제 노드에 여유 키가 있는 경우
+            left_sibling, right_sibling = delete_node.find_sibling(
+                self, parent_node)
+            print("left_sibling is\n", left_sibling)
+            print("\n right_sibling is \n", right_sibling)
+            if (left_sibling and left_sibling.m != min_key_num):
+                delete_node.borrow_left_sibling(
+                    self, left_sibling, parent_node, key)
+            elif (right_sibling and right_sibling.m != min_key_num):
+                delete_node.borrow_right_sibling(
+                    self, right_sibling, parent_node, key)
+        # 인터널 노드 내부에 인덱스가 존재한다면 변경해주어야함 -> 해당 노드의 오른쪽 자식 노드를 타고가서 가장 작은값 가져오기
+
+        while parent_node is not None:
+            for idx, node_key in enumerate(parent_node.key):
+                if node_key == key:
+                    if (idx == max_idx or parent_node.leftchild[idx+1] == -1):
+                        right_child = self.load_node(parent_node.rightchild)
+                        min_key = parent_node.find_min_key(self, right_child)
+                    else:
+                        right_child = self.load_node(
+                            parent_node.leftchild[idx+1])
+                        min_key = right_child.find_min_key(self, right_child)
+                    parent_node.key[idx] = min_key
+                    self.update_node(parent_node)
+            parent_node = parent_node.load_parent_node(self, parent_node)
+
+    # 디버깅용
 
     def print_node(self, position):
         node = self.load_node(position)
@@ -400,6 +559,7 @@ class BPTree:
             print(
                 f"Header -> b: {b}, Root Node Position: {root_node_position}")
 
+    # 디버깅용 모든 노드 프린트
     def traverse_and_collect(self, node=None, nodes=None):
         if nodes is None:
             nodes = []
@@ -449,9 +609,20 @@ if __name__ == "__main__":
         tree = BPTree(index_file)
         # root node 생성
         root_node = tree.load_root_node()
-        tree.update_root_position(root_node.position)
+        # tree.update_root_position(root_node.position)
 
         tree.search(key, root_node)
+
+    if cmd == '-d':
+        delete_file = sys.argv[3]
+        tree = BPTree(index_file)
+
+        with open(delete_file, 'r') as file:
+            delete_date = csv.reader(file)
+
+            for delete in delete_date:
+                root_node = tree.load_root_node()
+                tree.delete(delete[0])
 
     # 디버깅용 - 헤더 프린트
     if cmd == '-ph':
@@ -459,3 +630,10 @@ if __name__ == "__main__":
         all_nodes = tree.traverse_and_collect()
         for node in all_nodes:
             print(node)
+        tree.print_header()
+
+    if cmd == '-r':
+        tree = BPTree(index_file)
+        root_node = tree.load_root_node()
+
+        tree.range_search(root_node)
